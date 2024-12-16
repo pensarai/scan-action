@@ -38498,6 +38498,7 @@ async function run() {
                 },
                 body: JSON.stringify(statusRequest),
             });
+            core.info(`${statusResponse.status}`);
             if (statusResponse.status === 404) {
                 core.info("Scan not found yet, waiting...");
                 await new Promise((r) => setTimeout(r, 3000));
@@ -38508,7 +38509,7 @@ async function run() {
                 throw new Error(`Failed to check scan status: ${statusResponse.status} ${errorText}`);
             }
             const responseData = await statusResponse.json();
-            core.info(`Current scan status: ${responseData}`);
+            core.info(`Current scan status: ${JSON.stringify(responseData)}`);
             const { status } = ScanStatusResponse.parse(responseData);
             core.info(`Current scan status: ${status}`);
             if (status === "done") {
