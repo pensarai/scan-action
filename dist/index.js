@@ -38435,7 +38435,6 @@ const DispatchScanRequest = zod_1.z.object({
     eventType: zod_1.z.enum(["pull-request", "commit"]),
     actionRunId: zod_1.z.number(),
     pullRequest: zod_1.z.string().nullable().optional(),
-    commit: zod_1.z.string().optional().nullable(),
 });
 const GetScanStatusRequest = zod_1.z.object({
     apiKey: zod_1.z.string(),

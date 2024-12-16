@@ -9,7 +9,6 @@ const DispatchScanRequest = z.object({
   eventType: z.enum(["pull-request", "commit"]),
   actionRunId: z.number(),
   pullRequest: z.string().nullable().optional(),
-  commit: z.string().optional().nullable(),
 });
 
 const GetScanStatusRequest = z.object({
