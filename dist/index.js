@@ -38508,6 +38508,7 @@ async function run() {
                 throw new Error(`Failed to check scan status: ${statusResponse.status} ${errorText}`);
             }
             const responseData = await statusResponse.json();
+            core.info(`Current scan status: ${responseData}`);
             const { status } = ScanStatusResponse.parse(responseData);
             core.info(`Current scan status: ${status}`);
             if (status === "done") {

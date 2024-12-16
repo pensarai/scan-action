@@ -96,6 +96,8 @@ async function run() {
       }
 
       const responseData = await statusResponse.json();
+      core.info(`Current scan status: ${responseData}`);
+
       const { status } = ScanStatusResponse.parse(responseData);
 
       core.info(`Current scan status: ${status}`);
