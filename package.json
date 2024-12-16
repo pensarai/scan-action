@@ -1,0 +1,21 @@
+{
+  "name": "scan-action",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/node-fetch": "^2.6.12",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@actions/github": "^6.0.0",
+    "node-fetch": "^2.7.0"
+  }
+}

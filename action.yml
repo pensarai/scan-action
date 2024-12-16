@@ -1,0 +1,27 @@
+name: "Pensar Security Scan"
+description: "Queue and monitor security scans with Pensar"
+
+branding:
+  icon: "shield" # Icon from Feather icon set: https://feathericons.com/
+  color: "gray-dark" # Options: white, yellow, blue, green, orange, red, purple, gray-dark
+
+inputs:
+  api-key:
+    description: "Pensar API key"
+    required: true
+  api-url:
+    description: "Pensar API URL"
+    required: false
+    default: "https://josh-pensar-api.pensar-ai.com"
+  installation-id:
+    description: "GitHub App Installation ID"
+    required: true
+
+outputs:
+  scan_id:
+    description: "ID of the queued scan"
+
+# Specifies where the action code is
+runs:
+  using: "node20"
+  main: "dist/index.js"
