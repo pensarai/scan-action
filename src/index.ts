@@ -81,7 +81,7 @@ async function run() {
         },
         body: JSON.stringify(statusRequest),
       });
-
+      core.info(`${statusResponse.status}`);
       if (statusResponse.status === 404) {
         core.info("Scan not found yet, waiting...");
         await new Promise((r) => setTimeout(r, 3000));
