@@ -38435,6 +38435,7 @@ const DispatchScanRequest = zod_1.z.object({
     eventType: zod_1.z.enum(["pull-request", "commit"]),
     actionRunId: zod_1.z.number(),
     pullRequest: zod_1.z.string().nullable().optional(),
+    targetBranch: zod_1.z.string(),
 });
 const GetScanStatusRequest = zod_1.z.object({
     apiKey: zod_1.z.string(),
@@ -38457,6 +38458,9 @@ async function run() {
         const runId = github.context.runId;
         const eventName = github.context.eventName;
         const prUrl = github.context.payload.pull_request?.html_url ?? null;
+        const targetBranch = eventName === "pull_request"
+            ? github.context.payload.pull_request?.head.ref
+            : github.context.ref.replace("refs/heads/", "");
         const eventType = eventName === "pull_request"
             ? "pull-request"
             : eventName === "push"
@@ -38471,6 +38475,7 @@ async function run() {
             actionRunId: runId,
             eventType: eventType,
             pullRequest: prUrl,
+            targetBranch: targetBranch,
         };
         const queueResponse = await (0, node_fetch_1.default)(`${apiUrl}/scans/dispatch`, {
             method: "POST",

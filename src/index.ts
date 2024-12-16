@@ -9,6 +9,7 @@ const DispatchScanRequest = z.object({
   eventType: z.enum(["pull-request", "commit"]),
   actionRunId: z.number(),
   pullRequest: z.string().nullable().optional(),
+  targetBranch: z.string(),
 });
 
 const GetScanStatusRequest = z.object({
@@ -36,6 +37,10 @@ async function run() {
     const runId = github.context.runId;
     const eventName = github.context.eventName;
     const prUrl = github.context.payload.pull_request?.html_url ?? null;
+    const targetBranch =
+      eventName === "pull_request"
+        ? github.context.payload.pull_request?.head.ref
+        : github.context.ref.replace("refs/heads/", "");
     const eventType =
       eventName === "pull_request"
         ? "pull-request"
@@ -51,6 +56,7 @@ async function run() {
       actionRunId: runId,
       eventType: eventType,
       pullRequest: prUrl,
+      targetBranch: targetBranch,
     };
     const queueResponse = await fetch(`${apiUrl}/scans/dispatch`, {
       method: "POST",
