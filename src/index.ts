@@ -1,74 +1,112 @@
 // src/index.ts
 import * as core from "@actions/core";
+import * as github from "@actions/github";
 import fetch from "node-fetch";
+import { z } from "zod";
+const DispatchScanRequest = z.object({
+  apiKey: z.string(),
+  repoId: z.number(),
+  eventType: z.enum(["pull-request", "commit"]),
+  actionRunId: z.number(),
+});
+
+const GetScanStatusRequest = z.object({
+  apiKey: z.string(),
+  repoId: z.number(),
+  actionRunId: z.number(),
+});
+
+const ScanStatusResponse = z.object({
+  id: z.string(),
+  status: z.enum(["scanning", "triaging", "done", "generating patches"]),
+});
 
 async function run() {
   try {
-    // const apiKey = core.getInput("api-key", { required: true });
-    // const apiUrl = core.getInput("api-url", { required: true });
-    // const installationId = core.getInput("installation-id", { required: true });
-    // const repository = core.getInput("repository", { required: true });
+    const apiKey = core.getInput("api-key", { required: true });
+    const environment = core.getInput("environment", { required: false });
+    let apiUrl =
+      environment && environment === "dev"
+        ? "https://josh-pensar-api.pensar.dev"
+        : "https://pensar-api.pensar.dev";
 
     // Queue the scan
+    const repoId = github.context.payload.repository?.id;
+    const runId = github.context.runId;
+    const eventName = github.context.eventName;
+    const eventType =
+      eventName === "pull_request"
+        ? "pull-request"
+        : eventName === "push"
+        ? "commit"
+        : (() => {
+            throw new Error(`Unsupported event type: ${eventName}`);
+          })();
     core.info("Queueing scan...");
-    // const queueResponse = await fetch(`${apiUrl}/scans`, {
-    //   method: "POST",
-    //   headers: {
-    //     Authorization: `Bearer ${apiKey}`,
-    //     "Content-Type": "application/json",
-    //   },
-    //   body: JSON.stringify({
-    //     installation_id: installationId,
-    //     repository: repository,
-    //   }),
-    // });
+    const queueRequest: z.infer<typeof DispatchScanRequest> = {
+      apiKey: apiKey,
+      repoId: repoId,
+      actionRunId: runId,
+      eventType: eventType,
+    };
+    const queueResponse = await fetch(`${apiUrl}/scans/dispatch`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(queueRequest),
+    });
 
-    // if (!queueResponse.ok) {
-    //   throw new Error(`Failed to queue scan: ${queueResponse.statusText}`);
-    // }
-
-    // const { scan_id } = await queueResponse.json();
-    // core.setOutput("scan_id", scan_id);
-    // core.info(`Scan queued with ID: ${scan_id}`);
+    if (!queueResponse.ok) {
+      throw new Error(`Failed to queue scan: ${queueResponse.statusText}`);
+    }
+    core.info(`Scan queued...`);
 
     // // Poll for completion
-    // const maxAttempts = 30;
-    // for (let i = 0; i < maxAttempts; i++) {
-    //   const statusResponse = await fetch(`${apiUrl}/scans/${scan_id}`, {
-    //     headers: {
-    //       Authorization: `Bearer ${apiKey}`,
-    //     },
-    //   });
+    const statusRequest: z.infer<typeof GetScanStatusRequest> = {
+      apiKey: apiKey,
+      repoId: repoId,
+      actionRunId: runId,
+    };
 
-    //   if (!statusResponse.ok) {
-    //     throw new Error(
-    //       `Failed to check scan status: ${statusResponse.statusText}`
-    //     );
-    //   }
+    // try for 1 hour
+    const maxAttempts = 1200;
+    for (let i = 0; i < maxAttempts; i++) {
+      const statusResponse = await fetch(`${apiUrl}/scans/status`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(statusRequest),
+      });
 
-    //   const { status } = await statusResponse.json();
+      if (statusResponse.status === 404) {
+        core.info("Scan not found yet, waiting...");
+        await new Promise((r) => setTimeout(r, 3000));
+        continue;
+      }
 
-    //   if (status === "completed") {
-    //     core.info("Scan completed successfully");
-    //     return;
-    //   }
+      if (!statusResponse.ok) {
+        const errorText = await statusResponse.text();
+        throw new Error(
+          `Failed to check scan status: ${statusResponse.status} ${errorText}`
+        );
+      }
 
-    //   if (status === "failed") {
-    //     core.setFailed("Scan failed");
-    //     return;
-    //   }
+      const responseData = await statusResponse.json();
+      const { status } = ScanStatusResponse.parse(responseData);
 
-    //   core.info(
-    //     `Scan in progress (attempt ${
-    //       i + 1
-    //     }/${maxAttempts}). Waiting 30 seconds...`
-    //   );
+      core.info(`Current scan status: ${status}`);
 
-    core.info(
-      `Scan in progress (attempt ${1 + 1}/${1}). Waiting 30 seconds...`
-    );
-    await new Promise((r) => setTimeout(r, 30000));
-    // }
+      if (status === "done") {
+        core.info("Scan completed successfully");
+        return;
+      }
+
+      await new Promise((r) => setTimeout(r, 3000));
+    }
 
     core.setFailed("Scan timed out");
   } catch (error) {
