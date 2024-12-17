@@ -38437,7 +38437,7 @@ const GetInitialScanRequest = zod_1.z.object({
 const ScanResponse = zod_1.z.object({
     id: zod_1.z.string(),
     status: zod_1.z.enum(["scanning", "triaging", "done", "generating patches"]),
-    errorMessage: zod_1.z.string(),
+    errorMessage: zod_1.z.string().nullable(),
 });
 async function run() {
     try {

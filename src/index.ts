@@ -13,7 +13,7 @@ const GetInitialScanRequest = z.object({
 const ScanResponse = z.object({
   id: z.string(),
   status: z.enum(["scanning", "triaging", "done", "generating patches"]),
-  errorMessage: z.string(),
+  errorMessage: z.string().nullable(),
 });
 
 async function run() {
