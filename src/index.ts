@@ -21,6 +21,7 @@ const GetScanStatusRequest = z.object({
 const ScanStatusResponse = z.object({
   id: z.string(),
   status: z.enum(["scanning", "triaging", "done", "generating patches"]),
+  errorMessage: z.string().nullable(),
 });
 
 async function run() {
@@ -106,10 +107,13 @@ async function run() {
       const responseData = await statusResponse.json();
       core.info(`Current scan status: ${JSON.stringify(responseData)}`);
 
-      const { status } = ScanStatusResponse.parse(responseData);
+      const { status, errorMessage } = ScanStatusResponse.parse(responseData);
 
       core.info(`Current scan status: ${status}`);
-
+      if (status === "done" && errorMessage) {
+        core.error(`Error occurred during scan: ${errorMessage}`);
+        return;
+      }
       if (status === "done") {
         core.info("Scan completed successfully");
         return;
