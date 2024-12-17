@@ -1,27 +1,19 @@
-// src/index.ts
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 import fetch from "node-fetch";
 import { z } from "zod";
-const DispatchScanRequest = z.object({
-  apiKey: z.string(),
-  repoId: z.number(),
-  eventType: z.enum(["pull-request", "commit"]),
-  actionRunId: z.number(),
-  pullRequest: z.string().nullable().optional(),
-  targetBranch: z.string(),
-});
 
-const GetScanStatusRequest = z.object({
+const GetInitialScanRequest = z.object({
   apiKey: z.string(),
   repoId: z.number(),
   actionRunId: z.number(),
+  pullRequest: z.string().nullable(),
 });
 
-const ScanStatusResponse = z.object({
+const ScanResponse = z.object({
   id: z.string(),
   status: z.enum(["scanning", "triaging", "done", "generating patches"]),
-  errorMessage: z.string().nullable(),
+  errorMessage: z.string(),
 });
 
 async function run() {
@@ -33,81 +25,56 @@ async function run() {
         ? "https://josh-pensar-api.pensar.dev"
         : "https://pensar-api.pensar.dev";
 
-    // Queue the scan
+    // Validate PR context
+    if (!github.context.payload.pull_request?.html_url) {
+      core.error(`Status check can only be ran in a PR event.`);
+      return;
+    }
+
     const repoId = github.context.payload.repository?.id;
     const runId = github.context.runId;
-    const eventName = github.context.eventName;
-    const prUrl = github.context.payload.pull_request?.html_url ?? null;
-    const targetBranch =
-      eventName === "pull_request"
-        ? github.context.payload.pull_request?.head.ref
-        : github.context.ref.replace("refs/heads/", "");
-    const eventType =
-      eventName === "pull_request"
-        ? "pull-request"
-        : eventName === "push"
-        ? "commit"
-        : (() => {
-            throw new Error(`Unsupported event type: ${eventName}`);
-          })();
-    core.info("Queueing scan...");
-    const queueRequest: z.infer<typeof DispatchScanRequest> = {
+    const prUrl = github.context.payload.pull_request?.html_url;
+
+    // Initial request to get scan ID
+    const initialRequest: z.infer<typeof GetInitialScanRequest> = {
       apiKey: apiKey,
       repoId: repoId,
       actionRunId: runId,
-      eventType: eventType,
       pullRequest: prUrl,
-      targetBranch: targetBranch,
-    };
-    const queueResponse = await fetch(`${apiUrl}/scans/dispatch`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(queueRequest),
-    });
-
-    if (!queueResponse.ok) {
-      throw new Error(`Failed to queue scan: ${queueResponse.statusText}`);
-    }
-    core.info(`Scan queued...`);
-
-    // // Poll for completion
-    const statusRequest: z.infer<typeof GetScanStatusRequest> = {
-      apiKey: apiKey,
-      repoId: repoId,
-      actionRunId: runId,
     };
 
     // try for 1 hour
     const maxAttempts = 1200;
+    let scanId: string | null = null;
+
     for (let i = 0; i < maxAttempts; i++) {
-      const statusResponse = await fetch(`${apiUrl}/scans/status`, {
+      const scanResponse = await fetch(`${apiUrl}/scans`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(statusRequest),
+        body: JSON.stringify(initialRequest),
       });
-      if (statusResponse.status === 404) {
+
+      if (scanResponse.status === 404) {
         core.info("Scan not found yet, waiting...");
         await new Promise((r) => setTimeout(r, 3000));
         continue;
       }
 
-      if (!statusResponse.ok) {
-        const errorText = await statusResponse.text();
+      if (!scanResponse.ok) {
+        const errorText = await scanResponse.text();
         throw new Error(
-          `Failed to check scan status: ${statusResponse.status} ${errorText}`
+          `Failed to get scan status: ${scanResponse.status} ${errorText}`
         );
       }
 
-      const responseData = await statusResponse.json();
-      core.info(`Current scan status: ${JSON.stringify(responseData)}`);
+      const responseData = await scanResponse.json();
+      core.info(`Received scan data: ${JSON.stringify(responseData)}`);
 
-      const { status, errorMessage } = ScanStatusResponse.parse(responseData);
+      const { id, status, errorMessage } = ScanResponse.parse(responseData);
+      scanId = id;
 
       core.info(`Current scan status: ${status}`);
       if (status === "done" && errorMessage) {
