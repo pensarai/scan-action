@@ -38445,6 +38445,7 @@ const GetScanStatusRequest = zod_1.z.object({
 const ScanStatusResponse = zod_1.z.object({
     id: zod_1.z.string(),
     status: zod_1.z.enum(["scanning", "triaging", "done", "generating patches"]),
+    errorMessage: zod_1.z.string().nullable(),
 });
 async function run() {
     try {
@@ -38517,8 +38518,12 @@ async function run() {
             }
             const responseData = await statusResponse.json();
             core.info(`Current scan status: ${JSON.stringify(responseData)}`);
-            const { status } = ScanStatusResponse.parse(responseData);
+            const { status, errorMessage } = ScanStatusResponse.parse(responseData);
             core.info(`Current scan status: ${status}`);
+            if (status === "done" && errorMessage) {
+                core.error(`Error occurred during scan: ${errorMessage}`);
+                return;
+            }
             if (status === "done") {
                 core.info("Scan completed successfully");
                 return;
