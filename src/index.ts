@@ -1,67 +1,28 @@
+// src/index.ts
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 import fetch from "node-fetch";
 import { z } from "zod";
+const DispatchScanRequest = z.object({
+  apiKey: z.string(),
+  repoId: z.number(),
+  eventType: z.enum(["pull-request", "commit"]),
+  actionRunId: z.number(),
+  pullRequest: z.string().nullable().optional(),
+  targetBranch: z.string(),
+});
 
-const GetInitialScanRequest = z.object({
+const GetScanStatusRequest = z.object({
   apiKey: z.string(),
   repoId: z.number(),
   actionRunId: z.number(),
-  pullRequest: z.string().nullable(),
 });
 
-const ScanResponse = z.object({
+const ScanStatusResponse = z.object({
   id: z.string(),
   status: z.enum(["scanning", "triaging", "done", "generating patches"]),
   errorMessage: z.string().nullable(),
 });
-
-async function getScanId(
-  apiUrl: string,
-  request: z.infer<typeof GetInitialScanRequest>
-): Promise<string> {
-  const scanResponse = await fetch(`${apiUrl}/scans`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${request.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(request),
-  });
-
-  if (scanResponse.status === 404) {
-    throw new Error("Scan not found");
-  }
-
-  if (!scanResponse.ok) {
-    const errorText = await scanResponse.text();
-    throw new Error(`Failed to get scan: ${scanResponse.status} ${errorText}`);
-  }
-
-  const responseData = await scanResponse.json();
-  const { id } = ScanResponse.parse(responseData);
-  return id;
-}
-
-async function getScanStatus(apiUrl: string, scanId: string, apiKey: string) {
-  const statusResponse = await fetch(`${apiUrl}/scans/status/${scanId}`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-  });
-
-  if (!statusResponse.ok) {
-    const errorText = await statusResponse.text();
-    throw new Error(
-      `Failed to check scan status: ${statusResponse.status} ${errorText}`
-    );
-  }
-
-  const responseData = await statusResponse.json();
-  return ScanResponse.parse(responseData);
-}
 
 async function run() {
   try {
@@ -72,53 +33,87 @@ async function run() {
         ? "https://josh-pensar-api.pensar.dev"
         : "https://pensar-api.pensar.dev";
 
-    // Validate PR context
-    if (!github.context.payload.pull_request?.html_url) {
-      core.error(`Status check can only be ran in a PR event.`);
-      return;
-    }
-
+    // Queue the scan
     const repoId = github.context.payload.repository?.id;
     const runId = github.context.runId;
-    const prUrl = github.context.payload.pull_request?.html_url;
-
-    // Initial request to get scan ID
-    const initialRequest: z.infer<typeof GetInitialScanRequest> = {
+    const eventName = github.context.eventName;
+    const prUrl = github.context.payload.pull_request?.html_url ?? null;
+    const targetBranch =
+      eventName === "pull_request"
+        ? github.context.payload.pull_request?.head.ref
+        : github.context.ref.replace("refs/heads/", "");
+    const eventType =
+      eventName === "pull_request"
+        ? "pull-request"
+        : eventName === "push"
+        ? "commit"
+        : (() => {
+            throw new Error(`Unsupported event type: ${eventName}`);
+          })();
+    core.info("Queueing scan...");
+    const queueRequest: z.infer<typeof DispatchScanRequest> = {
       apiKey: apiKey,
       repoId: repoId,
       actionRunId: runId,
+      eventType: eventType,
       pullRequest: prUrl,
+      targetBranch: targetBranch,
+    };
+    const queueResponse = await fetch(`${apiUrl}/scans/dispatch`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(queueRequest),
+    });
+
+    if (!queueResponse.ok) {
+      throw new Error(`Failed to queue scan: ${queueResponse.statusText}`);
+    }
+    core.info(`Scan queued...`);
+
+    // // Poll for completion
+    const statusRequest: z.infer<typeof GetScanStatusRequest> = {
+      apiKey: apiKey,
+      repoId: repoId,
+      actionRunId: runId,
     };
 
-    // Get initial scan ID
-    let scanId: string;
-    try {
-      scanId = await getScanId(apiUrl, initialRequest);
-      core.info(`Retrieved scan ID: ${scanId}`);
-    } catch (error) {
-      if (error instanceof Error && error.message === "Scan not found") {
-        core.error("No scan found for this PR");
-        return;
-      }
-      throw error;
-    }
-
-    // Poll for status using scan ID
-    const maxAttempts = 1200; // try for 1 hour
+    // try for 1 hour
+    const maxAttempts = 1200;
     for (let i = 0; i < maxAttempts; i++) {
-      const { status, errorMessage } = await getScanStatus(
-        apiUrl,
-        scanId,
-        apiKey
-      );
+      const statusResponse = await fetch(`${apiUrl}/scans/status`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(statusRequest),
+      });
+      if (statusResponse.status === 404) {
+        core.info("Scan not found yet, waiting...");
+        await new Promise((r) => setTimeout(r, 3000));
+        continue;
+      }
+
+      if (!statusResponse.ok) {
+        const errorText = await statusResponse.text();
+        throw new Error(
+          `Failed to check scan status: ${statusResponse.status} ${errorText}`
+        );
+      }
+
+      const responseData = await statusResponse.json();
+      core.info(`Current scan status: ${JSON.stringify(responseData)}`);
+
+      const { status, errorMessage } = ScanStatusResponse.parse(responseData);
 
       core.info(`Current scan status: ${status}`);
-
       if (status === "done" && errorMessage) {
         core.error(`Error occurred during scan: ${errorMessage}`);
         return;
       }
-
       if (status === "done") {
         core.info("Scan completed successfully");
         return;
