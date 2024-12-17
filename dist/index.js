@@ -38439,6 +38439,41 @@ const ScanResponse = zod_1.z.object({
     status: zod_1.z.enum(["scanning", "triaging", "done", "generating patches"]),
     errorMessage: zod_1.z.string().nullable(),
 });
+async function getScanId(apiUrl, request) {
+    const scanResponse = await (0, node_fetch_1.default)(`${apiUrl}/scans`, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${request.apiKey}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(request),
+    });
+    if (scanResponse.status === 404) {
+        throw new Error("Scan not found");
+    }
+    if (!scanResponse.ok) {
+        const errorText = await scanResponse.text();
+        throw new Error(`Failed to get scan: ${scanResponse.status} ${errorText}`);
+    }
+    const responseData = await scanResponse.json();
+    const { id } = ScanResponse.parse(responseData);
+    return id;
+}
+async function getScanStatus(apiUrl, scanId, apiKey) {
+    const statusResponse = await (0, node_fetch_1.default)(`${apiUrl}/scans/status/${scanId}`, {
+        method: "GET",
+        headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+        },
+    });
+    if (!statusResponse.ok) {
+        const errorText = await statusResponse.text();
+        throw new Error(`Failed to check scan status: ${statusResponse.status} ${errorText}`);
+    }
+    const responseData = await statusResponse.json();
+    return ScanResponse.parse(responseData);
+}
 async function run() {
     try {
         const apiKey = core.getInput("api-key", { required: true });
@@ -38461,31 +38496,23 @@ async function run() {
             actionRunId: runId,
             pullRequest: prUrl,
         };
-        // try for 1 hour
-        const maxAttempts = 1200;
-        let scanId = null;
+        // Get initial scan ID
+        let scanId;
+        try {
+            scanId = await getScanId(apiUrl, initialRequest);
+            core.info(`Retrieved scan ID: ${scanId}`);
+        }
+        catch (error) {
+            if (error instanceof Error && error.message === "Scan not found") {
+                core.error("No scan found for this PR");
+                return;
+            }
+            throw error;
+        }
+        // Poll for status using scan ID
+        const maxAttempts = 1200; // try for 1 hour
         for (let i = 0; i < maxAttempts; i++) {
-            const scanResponse = await (0, node_fetch_1.default)(`${apiUrl}/scans`, {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${apiKey}`,
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(initialRequest),
-            });
-            if (scanResponse.status === 404) {
-                core.info("Scan not found yet, waiting...");
-                await new Promise((r) => setTimeout(r, 3000));
-                continue;
-            }
-            if (!scanResponse.ok) {
-                const errorText = await scanResponse.text();
-                throw new Error(`Failed to get scan status: ${scanResponse.status} ${errorText}`);
-            }
-            const responseData = await scanResponse.json();
-            core.info(`Received scan data: ${JSON.stringify(responseData)}`);
-            const { id, status, errorMessage } = ScanResponse.parse(responseData);
-            scanId = id;
+            const { status, errorMessage } = await getScanStatus(apiUrl, scanId, apiKey);
             core.info(`Current scan status: ${status}`);
             if (status === "done" && errorMessage) {
                 core.error(`Error occurred during scan: ${errorMessage}`);
