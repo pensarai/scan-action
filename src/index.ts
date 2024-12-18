@@ -110,8 +110,6 @@ async function run() {
       }
 
       const responseData = await statusResponse.json();
-      core.info(`Current scan status: ${JSON.stringify(responseData)}`);
-
       const { id, status, errorMessage } =
         ScanStatusResponse.parse(responseData);
 
@@ -141,6 +139,7 @@ async function run() {
           core.setFailed(
             `Scan completed successfully. ${issuesResult.count} issues found.`
           );
+          return;
         }
         core.info("Scan completed successfully. No issues found.");
         return;
