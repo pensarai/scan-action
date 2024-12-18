@@ -24,6 +24,11 @@ const ScanStatusResponse = z.object({
   errorMessage: z.string().nullable(),
 });
 
+const GetScanIssuesRequest = z.object({
+  apiKey: z.string(),
+  scanId: z.string(),
+});
+
 async function run() {
   try {
     const apiKey = core.getInput("api-key", { required: true });
@@ -107,7 +112,8 @@ async function run() {
       const responseData = await statusResponse.json();
       core.info(`Current scan status: ${JSON.stringify(responseData)}`);
 
-      const { status, errorMessage } = ScanStatusResponse.parse(responseData);
+      const { id, status, errorMessage } =
+        ScanStatusResponse.parse(responseData);
 
       core.info(`Current scan status: ${status}`);
       if (status === "done" && errorMessage) {
@@ -115,7 +121,28 @@ async function run() {
         return;
       }
       if (status === "done") {
-        core.info("Scan completed successfully");
+        const issuesRequest: z.infer<typeof GetScanIssuesRequest> = {
+          apiKey: apiKey,
+          scanId: id,
+        };
+        const issuesResponse = await fetch(`${apiUrl}/scans/issues`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(issuesRequest),
+        });
+        if (!issuesResponse.ok) {
+          throw new Error(`Failed to get scan issues ${issuesResponse.text()}`);
+        }
+        const issuesResult = await issuesResponse.json();
+        if (issuesResult.count > 0) {
+          core.setFailed(
+            `Scan completed successfully. ${issuesResult.count} issues found.`
+          );
+        }
+        core.info("Scan completed successfully. No issues found.");
         return;
       }
 
