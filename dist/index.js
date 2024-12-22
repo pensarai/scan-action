@@ -38457,7 +38457,9 @@ async function run() {
         const environment = core.getInput("environment", { required: false });
         let apiUrl = environment && environment === "dev"
             ? "https://josh-pensar-api.pensar.dev"
-            : "https://pensar-api.pensar.dev";
+            : environment === "staging"
+                ? "https://staging-console-api.pensar.dev"
+                : "https://pensar-api.pensar.dev";
         // Queue the scan
         const repoId = github.context.payload.repository?.id;
         const runId = github.context.runId;
