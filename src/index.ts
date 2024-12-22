@@ -37,7 +37,7 @@ async function run() {
       environment && environment === "dev"
         ? "https://josh-pensar-api.pensar.dev"
         : environment === "staging"
-        ? "https://staging-console-api.pensar.dev"
+        ? "https://staging-api.pensar.dev"
         : "https://pensar-api.pensar.dev";
 
     // Queue the scan
