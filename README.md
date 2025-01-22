@@ -12,7 +12,7 @@ To begin using Pensar Scan:
 
 1. Go to [Pensar Console](https://console.pensar.dev).
 2. Connect your repository to integrate scans.
-3. Add the `PENSAR_API_KEY` to your repository secrets within Console or manually
+3. Add the `PENSAR_API_KEY` to your repository secrets within Console from the project settings or manually
 
 ### 2. Add the GitHub Action
 
