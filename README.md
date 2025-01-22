@@ -22,11 +22,9 @@ Utilize our setup wizard or add the following configuration to your repository's
 name: Pensar Vulnerability Scan
 
 on:
-  push:
+  pull_request:
     branches:
       - main
-  pull_request:
-
 jobs:
   scan:
     runs-on: ubuntu-latest
