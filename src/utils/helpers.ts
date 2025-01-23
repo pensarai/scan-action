@@ -16,7 +16,7 @@ export function getEnvironmentInputs() {
       ? "https://josh-pensar-api.pensar-ai.com"
       : environment === "staging"
       ? "https://staging-api.pensar.dev"
-      : "https://pensar-api.pensar.dev";
+      : "https://api.pensar.dev";
   if (environment && environment === "dev") {
     core.info("Running in dev mode, using " + apiUrl);
   }
